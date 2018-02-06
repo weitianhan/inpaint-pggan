@@ -20,7 +20,7 @@ class PixelNormLayer(nn.Module):
     def __init__(self, eps=1e-8):
         super(PixelNormLayer, self).__init__()
         self.eps = eps
-    
+
     def forward(self, x):
         return x / torch.sqrt(torch.mean(x ** 2, dim=1, keepdim=True) + 1e-8)
 
@@ -211,7 +211,7 @@ def resize_activations(v, so):
     #     else:
     #         shape += [1]
     # v = v.repeat(*shape)
-    if si[2] < so[2]: 
+    if si[2] < so[2]:
         assert so[2] % si[2] == 0 and so[2] / si[2] == so[3] / si[3]  # currently only support this case
         v = F.upsample(v, scale_factor=so[2]//si[2], mode='nearest')
 
@@ -239,12 +239,11 @@ class GSelectLayer(nn.Module):
 
         min_level, max_level = int(np.floor(cur_level-1)), int(np.ceil(cur_level-1))
         min_level_weight, max_level_weight = int(cur_level+1)-cur_level, cur_level-int(cur_level)
-        
+
         _from, _to, _step = 0, max_level+1, 1
 
         if self.pre is not None:
             x = self.pre(x)
-
         out = {}
         if DEBUG:
             print('G: level=%s, size=%s' % ('in', x.size()))
@@ -253,7 +252,6 @@ class GSelectLayer(nn.Module):
                 x = self.chain[level](x, y)
             else:
                 x = self.chain[level](x)
-
             if DEBUG:
                 print('G: level=%d, size=%s' % (level, x.size()))
 
@@ -285,7 +283,7 @@ class DSelectLayer(nn.Module):
 
         max_level, min_level = int(np.floor(self.N-cur_level)), int(np.ceil(self.N-cur_level))
         min_level_weight, max_level_weight = int(cur_level+1)-cur_level, cur_level-int(cur_level)
-        
+
         _from, _to, _step = min_level+1, self.N, 1
 
         if self.pre is not None:
@@ -334,7 +332,7 @@ class AEDSelectLayer(nn.Module):
         self.pre = pre
         self.chain = chain
         self.nins = nins
-        self.N = len(self.chain) // 2 
+        self.N = len(self.chain) // 2
 
     def forward(self, x, cur_level=None):
         if cur_level is None:
@@ -342,7 +340,7 @@ class AEDSelectLayer(nn.Module):
 
         max_level, min_level = int(np.floor(self.N-cur_level)), int(np.ceil(self.N-cur_level))
         min_level_weight, max_level_weight = int(cur_level+1)-cur_level, cur_level-int(cur_level)
-        
+
         _from, _to, _step = min_level, self.N, 1
 
         if self.pre is not None:
@@ -358,7 +356,7 @@ class AEDSelectLayer(nn.Module):
             in_max_level = self.chain[max_level](self.nins[max_level](x))
             if DEBUG:
                 print('D: level=%s(max_level), size=%s, encoder' % (max_level, in_max_level.size()))
-        
+
         for level in range(_from, _to, _step):
             if level == min_level:
                 in_min_level = self.nins[level](x)
@@ -423,7 +421,7 @@ class AEDSelectLayer(nn.Module):
 
         #     if DEBUG:
         #         print('D: level=%d, size=%s, decoder' % (level, x.size()))
-        
+
         # if min_level == max_level:
         #     if not min_level+1 == self.N-1:
         #         x = self.chain[_to-_from+_to](x)
@@ -478,4 +476,3 @@ def he_init(layer, nonlinearity='conv2d', param=None):
     else:
         gain = calculate_gain(nonlinearity)
     kaiming_normal(layer.weight, a=gain)
-

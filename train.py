@@ -314,10 +314,11 @@ if __name__ == '__main__':
     latent_size = 512
     sigmoid_at_end = args.gan in ['lsgan', 'gan']
 
-    G = Generator(num_channels=3, latent_size=latent_size, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, tanh_at_end=False)
-    D = Discriminator(num_channels=3, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, sigmoid_at_end=sigmoid_at_end)
-    print(G)
+    # G = Generator(num_channels=3, latent_size=latent_size, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, tanh_at_end=False)
+    D = Discriminator(num_channels=3, resolution=args.target_resol, fmap_max=latent_size, fmap_base=64, sigmoid_at_end=sigmoid_at_end)
+    # print(G)
     print(D)
+    stop
     data = CelebA()
     noise = RandomNoiseGenerator(latent_size, 'gaussian')
     pggan = PGGAN(G, D, data, noise, opts)

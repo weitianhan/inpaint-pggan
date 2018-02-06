@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import os, scipy.misc
 from glob import glob
-import numpy as np 
+import numpy as np
 import h5py
 
 
@@ -73,7 +73,7 @@ class CelebA():
                 batch_x = batch_x * max_lw + low_resol_batch_x * min_lw
         return batch_x
 
-    def save_imgs(self, samples, file_name):
+    def save_imgs(self, samples, file_name): #save combined image
         N_samples, channel, height, width = samples.shape
         N_row = N_col = int(np.ceil(N_samples**0.5))
         combined_imgs = np.ones((channel, N_row*height, N_col*width))
