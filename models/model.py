@@ -3,7 +3,7 @@ from models.base_model import *
 
 
 def G_conv(incoming, in_channels, out_channels, kernel_size, padding, nonlinearity, init, param=None,
-        to_sequential=True, use_wscale=True, use_batchnorm=False):
+        to_sequential=True, use_wscale=True, use_batchnorm=False, use_pixelnorm=True):
     layers = incoming
     layers += [nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=1, padding=padding)]
     he_init(layers[-1], init, param)  # init layers
@@ -12,11 +12,29 @@ def G_conv(incoming, in_channels, out_channels, kernel_size, padding, nonlineari
     layers += [nonlinearity]
     if use_batchnorm:
         layers += [nn.BatchNorm2d(out_channels)]
+    if use_pixelnorm:
+        layers += [PixelNormLayer()]
     if to_sequential:
         return nn.Sequential(*layers)
     else:
         return layers
 
+def E_conv(incoming, in_channels, out_channels, kernel_size, padding, nonlinearity, init, param=None,
+        to_sequential=True, use_wscale=True, use_gdrop=True, use_layernorm=False, gdrop_param=dict()):
+    layers = incoming
+    # if use_gdrop:
+    #     layers += [GDropLayer(**gdrop_param)]
+    layers += [nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=1, padding=padding)]
+    he_init(layers[-1], init, param)  # init layers
+    if use_wscale:
+        layers += [WScaleLayer(layers[-1])]
+    layers += [nonlinearity]
+    # if use_layernorm:
+    #     layers += [LayerNormLayer()]  # TODO: requires incoming layer
+    if to_sequential:
+        return nn.Sequential(*layers)
+    else:
+        return layers
 
 def NINLayer(incoming, in_channels, out_channels, nonlinearity, init, param=None,
             to_sequential=True, use_wscale=True):
@@ -32,6 +50,97 @@ def NINLayer(incoming, in_channels, out_channels, nonlinearity, init, param=None
     else:
         return layers
 
+class Encoder(nn.Module):
+    def __init__(self,
+                num_channels    = 1,        # Overridden based on dataset.
+                resolution      = 32,       # Overridden based on dataset.
+                label_size      = 0,        # Overridden based on dataset.
+                fmap_base       = 4096,
+                fmap_decay      = 1.0,
+                fmap_max        = 256,
+                mbstat_avg      = 'all',
+                mbdisc_kernels  = None,
+                use_wscale      = True,
+                use_gdrop       = False,
+                use_layernorm   = False,
+                sigmoid_at_end  = False):
+        super(Encoder, self).__init__()
+        self.num_channels = num_channels
+        self.resolution = resolution #256
+        self.label_size = label_size
+        self.fmap_base = fmap_base
+        self.fmap_decay = fmap_decay
+        self.fmap_max = fmap_max
+        self.mbstat_avg = mbstat_avg
+        self.mbdisc_kernels = mbdisc_kernels
+        self.use_wscale = use_wscale
+        self.use_gdrop = use_gdrop
+        self.use_layernorm = use_layernorm
+        self.sigmoid_at_end = sigmoid_at_end
+
+        R = int(np.log2(resolution)) # r = 8
+        assert resolution == 2**R and resolution >= 4
+        gdrop_strength = 0.0
+
+        negative_slope = 0.2
+        act = nn.LeakyReLU(negative_slope=negative_slope)
+        # input activation
+        iact = 'leaky_relu'
+        # output activation
+        output_act = nn.Sigmoid() if self.sigmoid_at_end else 'linear'
+        output_iact = 'sigmoid' if self.sigmoid_at_end else 'linear'
+        gdrop_param = {'mode': 'prop', 'strength': gdrop_strength}
+
+        nins = nn.ModuleList()
+        lods = nn.ModuleList()
+        pre = None
+        # pre = nn.ModuleList()
+        #
+        # net = []
+        # net = D_conv(net, 512, 512, 1, 0, act, iact, negative_slope, True,
+        #             self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
+        # pre.append(net)
+
+        # nins.append(NINLayer([], self.num_channels, self.get_nf(R-1), act, iact, negative_slope, True, self.use_wscale))
+        net = []
+        ic, oc = self.get_nf(R), self.get_nf(R)
+        net = D_conv(net, ic, oc, 3, 1, act, iact, negative_slope, False,
+                    self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
+        net += [nn.MaxPool2d(2)]
+        lods.append(nn.Sequential(*net))
+        nin = []
+        nin = NINLayer(nin, self.num_channels, oc, act, iact, negative_slope, True, self.use_wscale)
+        nins.append(nin)
+        for I in range(R-1, 3, -1):
+            ic, oc = self.get_nf(I+1), self.get_nf(I)
+            net = []
+            net = D_conv(net, ic, oc, 3, 1, act, iact, negative_slope, False,
+                        self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
+            net += [nn.MaxPool2d(2)]
+            lods.append(nn.Sequential(*net))
+            # nin = [nn.AvgPool2d(kernel_size=2, stride=2, ceil_mode=False, count_include_pad=False)]
+            nin = []
+            nin = NINLayer(nin, self.num_channels, oc//2, act, iact, negative_slope, True, self.use_wscale)
+            nins.append(nin)
+
+        net = []
+        lods.append(E_conv(net, self.get_nf(4), self.get_nf(4), 3, 1, act, iact, negative_slope, True, self.use_wscale,self.use_gdrop, self.use_layernorm, gdrop_param))
+        nin = []
+        nin = NINLayer(nin, self.num_channels, self.get_nf(4), act, iact, negative_slope, True, self.use_wscale)
+        nins.append(nin)
+        # print (lods)
+        # print (nins)
+        # stop
+        self.output_layer = ESelectLayer(pre, lods, nins)
+
+    def get_nf(self, stage):
+        return int(self.fmap_base / (2.0 ** (stage * self.fmap_decay)))
+
+    def forward(self, x, y=None, cur_level=None, insert_y_at=None, gdrop_strength=0.0):
+        for module in self.modules():
+            if hasattr(module, 'strength'):
+                module.strength = gdrop_strength
+        return self.output_layer(x, y, cur_level, insert_y_at)
 
 class Generator(nn.Module):
     def __init__(self,
@@ -40,11 +149,11 @@ class Generator(nn.Module):
                 label_size          = 0,        # Overridden based on dataset.
                 fmap_base           = 4096,
                 fmap_decay          = 1.0,
-                fmap_max            = 512,
+                fmap_max            = 256,
                 latent_size         = None,
-                normalize_latents   = True,
+                normalize_latents   = False,
                 use_wscale          = True,
-                use_pixelnorm       = True,
+                use_pixelnorm       = False,
                 use_leakyrelu       = True,
                 use_batchnorm       = False,
                 tanh_at_end         = None):
@@ -63,7 +172,7 @@ class Generator(nn.Module):
         self.use_batchnorm = use_batchnorm
         self.tanh_at_end = tanh_at_end
 
-        R = int(np.log2(resolution)) #256, r = 8
+        R = int(np.log2(resolution)) # r = 8
         assert resolution == 2**R and resolution >= 4
         # if latent_size is None:
         #     latent_size = self.get_nf(0)
@@ -81,38 +190,34 @@ class Generator(nn.Module):
 
         # if self.normalize_latents:
         #     pre = PixelNormLayer()
-
+        #
         # if self.label_size:
         #     layers += [ConcatLayer()]
 
         # layers += [ReshapeLayer([latent_size, 1, 1])]
-        # layers = G_conv(layers, 3, 64, 3, 1, act, iact, negative_slope,
-        #             False, self.use_wscale, self.use_batchnorm)
-        # net = G_conv(layers, latent_size, self.get_nf(1), 3, 1, act, iact, negative_slope,
-                    # True, self.use_wscale, self.use_batchnorm)  # first block
+        # layers = G_conv(layers, self.get_nf(4), self.get_nf(4), 1, 1, act, iact, negative_slope,
+        #             False, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
+        net = G_conv(layers, self.get_nf(4), self.get_nf(4), 1, 0, act, iact, negative_slope,
+                    True, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)  # first block
 
-        # lods.append(net)
-        # nins.append(NINLayer([], self.get_nf(1), self.num_channels, output_act, output_iact, None, True, self.use_wscale))  # to_rgb layer
+        lods.append(net)
+        nins.append(NINLayer([], self.get_nf(4), self.num_channels, 'linear', iact, negative_slope, True, self.use_wscale))  # to_rgb layer
 
-        # for I in range(2, R):  # following blocks
-        #     ic, oc = self.get_nf(I-1), self.get_nf(I)
-        #     layers = [nn.Upsample(scale_factor=2, mode='nearest')]  # upsample
-        #     layers = G_conv(layers, ic, oc, 3, 1, act, iact, negative_slope, False, self.use_wscale, self.use_batchnorm)
-        #     net = G_conv(layers, oc, oc, 3, 1, act, iact, negative_slope, True, self.use_wscale, self.use_batchnorm)
-        #     lods.append(net)
-        #     nins.append(NINLayer([], oc, self.num_channels, output_act, output_iact, None, True, self.use_wscale))  # to_rgb layer
+        for I in range(3, R):  # following blocks
+            ic, oc = self.get_nf(I+1), self.get_nf(I+2)
+            layers = [nn.Upsample(scale_factor=2, mode='nearest')]  # upsample
+            # layers = G_conv(layers, ic, oc, 3, 1, act, iact, negative_slope, False, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
+            net = G_conv(layers, ic, oc, 3, 1, act, iact, negative_slope, True, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
+            lods.append(net)
+            nins.append(NINLayer([], oc, self.num_channels, 'linear', iact, negative_slope, True, self.use_wscale))  # to_rgb layer
 
-        for I in range(3,R): # Encoder
-            ic, oc = self.get_nf(I+2), self.get_nf(I+3)
-            layers = G_conv(layers, ic, oc, 3, 1, act, iact, negative_slope, True, self.use_wscale, self.use_batchnorm)
-            lods.append(layers)
-
-        layers = []
-        layers = G_conv(layers, )
+        # print (lods)
+        # print (nins)
+        # stop
         self.output_layer = GSelectLayer(pre, lods, nins)
 
     def get_nf(self, stage):
-        return min(int((2.0 ** (stage)), self.fmap_max)
+        return int(self.fmap_base / (2.0 ** (stage * self.fmap_decay)))
 
     def forward(self, x, y=None, cur_level=None, insert_y_at=None):
         return self.output_layer(x, y, cur_level, insert_y_at)
@@ -147,7 +252,7 @@ class Discriminator(nn.Module):
                 mbstat_avg      = 'all',
                 mbdisc_kernels  = None,
                 use_wscale      = True,
-                use_gdrop       = True,
+                use_gdrop       = False,
                 use_layernorm   = False,
                 sigmoid_at_end  = False):
         super(Discriminator, self).__init__()
@@ -181,43 +286,41 @@ class Discriminator(nn.Module):
         lods = nn.ModuleList()
         pre = None
 
-        nins.append(NINLayer([], self.num_channels, self.get_nf(R-1), act, iact, negative_slope, True, self.use_wscale))
-
-        for I in range(R-1, 1, -1):
-            ic, oc = self.get_nf(I), self.get_nf(I-1)
-            net = D_conv([], ic, ic, 3, 1, act, iact, negative_slope, False,
-                        self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
+        # nins.append(NINLayer([], self.num_channels, self.get_nf(R-1), act, iact, negative_slope, True, self.use_wscale))
+        net = []
+        ic, oc = self.get_nf(R), self.get_nf(R)
+        net = D_conv(net, ic, oc, 3, 1, act, iact, negative_slope, False,
+                    self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
+        net += [nn.MaxPool2d(2)]
+        lods.append(nn.Sequential(*net))
+        nin = []
+        nin = NINLayer(nin, self.num_channels, oc, act, iact, negative_slope, True, self.use_wscale)
+        nins.append(nin)
+        for I in range(R-1, 3, -1):
+            ic, oc = self.get_nf(I+1), self.get_nf(I)
+            net = []
             net = D_conv(net, ic, oc, 3, 1, act, iact, negative_slope, False,
                         self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
-            net += [nn.AvgPool2d(kernel_size=2, stride=2, ceil_mode=False, count_include_pad=False)]
+            net += [nn.MaxPool2d(2)]
             lods.append(nn.Sequential(*net))
             # nin = [nn.AvgPool2d(kernel_size=2, stride=2, ceil_mode=False, count_include_pad=False)]
             nin = []
-            nin = NINLayer(nin, self.num_channels, oc, act, iact, negative_slope, True, self.use_wscale)
+            nin = NINLayer(nin, self.num_channels, oc//2, act, iact, negative_slope, True, self.use_wscale)
             nins.append(nin)
 
         net = []
-        ic = oc = self.get_nf(1)
-        if self.mbstat_avg is not None:
-            net += [MinibatchStatConcatLayer(averaging=self.mbstat_avg)]
-            ic += 1
-        net = D_conv(net, ic, oc, 3, 1, act, iact, negative_slope, False,
-                    self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
-        net = D_conv(net, oc, self.get_nf(0), 4, 0, act, iact, negative_slope, False,
-                    self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
-
-        # Increasing Variation Using MINIBATCH Standard Deviation
-        if self.mbdisc_kernels:
-            net += [MinibatchDiscriminationLayer(num_kernels=self.mbdisc_kernels)]
-
-        oc = 1 + self.label_size
-        # lods.append(NINLayer(net, self.get_nf(0), oc, 'linear', 'linear', None, True, self.use_wscale))
-        lods.append(NINLayer(net, self.get_nf(0), oc, output_act, output_iact, None, True, self.use_wscale))
-
+        lods.append(E_conv(net, self.get_nf(4), self.get_nf(4), 1, 0, act, iact, negative_slope, True, self.use_wscale,self.use_gdrop, self.use_layernorm, gdrop_param))
+        nin = []
+        nin = NINLayer(nin, self.num_channels, self.get_nf(4), act, iact, negative_slope, True, self.use_wscale)
+        nins.append(nin)
+        # print (lods)
+        # print (nins)
+        # stop
         self.output_layer = DSelectLayer(pre, lods, nins)
 
+
     def get_nf(self, stage):
-        return min(int(self.fmap_base / (2.0 ** (stage * self.fmap_decay))), self.fmap_max)
+        return int(self.fmap_base / (2.0 ** (stage * self.fmap_decay)))
 
     def forward(self, x, y=None, cur_level=None, insert_y_at=None, gdrop_strength=0.0):
         for module in self.modules():

@@ -226,7 +226,7 @@ class GSelectLayer(nn.Module):
     def __init__(self, pre, chain, post):
         super(GSelectLayer, self).__init__()
         assert len(chain) == len(post)
-        self.pre = pre
+        self.pre = None
         self.chain = chain
         self.post = post
         self.N = len(self.chain)
@@ -238,26 +238,31 @@ class GSelectLayer(nn.Module):
             assert insert_y_at is not None
 
         min_level, max_level = int(np.floor(cur_level-1)), int(np.ceil(cur_level-1))
+        # min_level -= 1
+        # max_level -= 1
         min_level_weight, max_level_weight = int(cur_level+1)-cur_level, cur_level-int(cur_level)
 
-        _from, _to, _step = 0, max_level+1, 1
+        _from, _to, _step = 0, max_level, 1
 
         if self.pre is not None:
             x = self.pre(x)
+
         out = {}
         if DEBUG:
-            print('G: level=%s, size=%s' % ('in', x.size()))
+            print('G: level=%s, size=%s, max_level=%s, min_level=%s' % ('in', x.size(), max_level, min_level))
+        # print (_from, _to)
         for level in range(_from, _to, _step):
             if level == insert_y_at:
                 x = self.chain[level](x, y)
             else:
+                # print (self.chain[level])
                 x = self.chain[level](x)
+
             if DEBUG:
                 print('G: level=%d, size=%s' % (level, x.size()))
-
-            if level == min_level:
+            if level == min_level-1:
                 out['min_level'] = self.post[level](x)
-            if level == max_level:
+            if level == max_level-1:
                 out['max_level'] = self.post[level](x)
                 x = resize_activations(out['min_level'], out['max_level'].size()) * min_level_weight + \
                         out['max_level'] * max_level_weight
@@ -274,8 +279,20 @@ class DSelectLayer(nn.Module):
         self.chain = chain
         self.inputs = inputs
         self.N = len(self.chain)
+        self.bs_map = {2**R: self.get_bs(2**R) for R in range(2, 11)}
+        self.batch_size = 32
+        # self.score = nn.Linear(self.batch_size*512*8*8, self.batch_size)
+        self.score = nn.Linear(512*8*8, 1)
+    def get_bs(self, resolution):
+        R = int(np.log2(resolution))
+        if R < 7:
+            bs = 32 / 2**(max(0, R-4))
+        else:
+            bs = 8 / 2**(min(2, R-7))
+        return int(bs)
 
     def forward(self, x, y=None, cur_level=None, insert_y_at=None):
+        self.batch_size = self.bs_map[2 ** (int(cur_level) + 1)]
         if cur_level is None:
             cur_level = self.N  # cur_level: physical index
         if y is not None:
@@ -283,7 +300,8 @@ class DSelectLayer(nn.Module):
 
         max_level, min_level = int(np.floor(self.N-cur_level)), int(np.ceil(self.N-cur_level))
         min_level_weight, max_level_weight = int(cur_level+1)-cur_level, cur_level-int(cur_level)
-
+        max_level += 1
+        min_level += 1
         _from, _to, _step = min_level+1, self.N, 1
 
         if self.pre is not None:
@@ -322,8 +340,72 @@ class DSelectLayer(nn.Module):
 
             if DEBUG:
                 print('D: level=%d, size=%s' % (level, x.size()))
+        # fully connected
+        x = x.view(-1, 512*8*8)
+        x = self.score(x)
+        x = F.sigmoid(x)
         return x
 
+class ESelectLayer(nn.Module):
+    def __init__(self, pre, chain, inputs):
+        super(ESelectLayer, self).__init__()
+        assert len(chain) == len(inputs)
+        self.pre = pre
+        self.chain = chain
+        self.inputs = inputs
+        self.N = len(self.chain)
+
+    def forward(self, x, y=None, cur_level=None, insert_y_at=None):
+        if cur_level is None:
+            cur_level = self.N  # cur_level: physical index
+        if y is not None:
+            assert insert_y_at is not None
+
+        max_level, min_level = int(np.floor(self.N-cur_level)), int(np.ceil(self.N-cur_level))
+        min_level_weight, max_level_weight = int(cur_level+1)-cur_level, cur_level-int(cur_level)
+        max_level += 1
+        min_level += 1
+        _from, _to, _step = min_level+1, self.N, 1
+
+        if self.pre is not None:
+            x = self.pre(x)
+
+        if DEBUG:
+            print('E: level=%s, size=%s, max_level=%s, min_level=%s' % ('in', x.size(), max_level, min_level))
+
+        if max_level == min_level:
+            x = self.inputs[max_level](x)
+            if max_level == insert_y_at:
+                x = self.chain[max_level](x, y)
+            else:
+                x = self.chain[max_level](x)
+        else:
+            out = {}
+            tmp = self.inputs[max_level](x)
+            if max_level == insert_y_at:
+                tmp = self.chain[max_level](tmp, y)
+            else:
+                tmp = self.chain[max_level](tmp)
+            out['max_level'] = tmp
+            out['min_level'] = self.inputs[min_level](x)
+            x = resize_activations(out['min_level'], out['max_level'].size()) * min_level_weight + \
+                                out['max_level'] * max_level_weight
+            if min_level == insert_y_at:
+                x = self.chain[min_level](x, y)
+            else:
+                x = self.chain[min_level](x)
+
+        for level in range(_from, _to, _step):
+            if level == insert_y_at:
+                x = self.chain[level](x, y)
+            else:
+                x = self.chain[level](x)
+
+        # x = self.pre[0](x) # last 1*1 conv for encoding
+
+            if DEBUG:
+                print('E: level=%d, size=%s' % (level, x.size()))
+        return x
 
 class AEDSelectLayer(nn.Module):
     def __init__(self, pre, chain, nins):
