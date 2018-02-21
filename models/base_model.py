@@ -238,8 +238,8 @@ class GSelectLayer(nn.Module):
             assert insert_y_at is not None
 
         min_level, max_level = int(np.floor(cur_level-1)), int(np.ceil(cur_level-1))
-        # min_level -= 1
-        # max_level -= 1
+        min_level -= 1
+        max_level -= 1
         min_level_weight, max_level_weight = int(cur_level+1)-cur_level, cur_level-int(cur_level)
 
         _from, _to, _step = 0, max_level, 1
@@ -250,7 +250,7 @@ class GSelectLayer(nn.Module):
         out = {}
         if DEBUG:
             print('G: level=%s, size=%s, max_level=%s, min_level=%s' % ('in', x.size(), max_level, min_level))
-        # print (_from, _to)
+            print ('G: From=%s, to=%s, curlevel=%s' % (_from, _to, cur_level))
         for level in range(_from, _to, _step):
             if level == insert_y_at:
                 x = self.chain[level](x, y)
@@ -282,7 +282,7 @@ class DSelectLayer(nn.Module):
         self.bs_map = {2**R: self.get_bs(2**R) for R in range(2, 11)}
         self.batch_size = 32
         # self.score = nn.Linear(self.batch_size*512*8*8, self.batch_size)
-        self.score = nn.Linear(512*8*8, 1)
+        self.score = nn.Linear(512*8*16, 1)
     def get_bs(self, resolution):
         R = int(np.log2(resolution))
         if R < 7:
@@ -300,8 +300,8 @@ class DSelectLayer(nn.Module):
 
         max_level, min_level = int(np.floor(self.N-cur_level)), int(np.ceil(self.N-cur_level))
         min_level_weight, max_level_weight = int(cur_level+1)-cur_level, cur_level-int(cur_level)
-        max_level += 1
-        min_level += 1
+        max_level += 2
+        min_level += 2
         _from, _to, _step = min_level+1, self.N, 1
 
         if self.pre is not None:
@@ -309,6 +309,7 @@ class DSelectLayer(nn.Module):
 
         if DEBUG:
             print('D: level=%s, size=%s, max_level=%s, min_level=%s' % ('in', x.size(), max_level, min_level))
+            print ('D: From=%s, to=%s, curlevel=%s' % (_from, _to, cur_level))
 
         if max_level == min_level:
             x = self.inputs[max_level](x)
@@ -341,7 +342,8 @@ class DSelectLayer(nn.Module):
             if DEBUG:
                 print('D: level=%d, size=%s' % (level, x.size()))
         # fully connected
-        x = x.view(-1, 512*8*8)
+        x = x.view(-1, 512*8*16)
+        # x = x.view(-1, 512*3*3)
         x = self.score(x)
         x = F.sigmoid(x)
         return x
@@ -363,8 +365,8 @@ class ESelectLayer(nn.Module):
 
         max_level, min_level = int(np.floor(self.N-cur_level)), int(np.ceil(self.N-cur_level))
         min_level_weight, max_level_weight = int(cur_level+1)-cur_level, cur_level-int(cur_level)
-        max_level += 1
-        min_level += 1
+        max_level += 2
+        min_level += 2
         _from, _to, _step = min_level+1, self.N, 1
 
         if self.pre is not None:
@@ -372,7 +374,7 @@ class ESelectLayer(nn.Module):
 
         if DEBUG:
             print('E: level=%s, size=%s, max_level=%s, min_level=%s' % ('in', x.size(), max_level, min_level))
-
+            print ('E: From=%s, to=%s, curlevel=%s' % (_from, _to, cur_level))
         if max_level == min_level:
             x = self.inputs[max_level](x)
             if max_level == insert_y_at:

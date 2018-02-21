@@ -84,6 +84,77 @@ class CelebA():
         combined_imgs = np.transpose(combined_imgs, [1, 2, 0])
         scipy.misc.imsave(file_name+'.png', combined_imgs)
 
+class Cityscape_img():
+    def __init__(self):
+        datapath = 'cityscape_image.h5'
+        resolution = ['data2x2', 'data4x4', 'data8x8', 'data16x16', 'data32x32', 'data64x64', \
+                        'data128x128', 'data256x256', 'data512x512', 'data1024x1024', 'data2048x2048']
+        self._base_key = 'data'
+        self.dataset = h5py.File(os.path.join(prefix, datapath), 'r')
+        self._len = {k:len(self.dataset[k]) for k in resolution}
+        assert all([resol in self.dataset.keys() for resol in resolution])
+
+    def __call__(self, batch_size, size, level=None):
+        key = self._base_key + '{}x{}'.format(size, size)
+        idx = np.random.randint(self._len[key], size=batch_size)
+        batch_x = np.array([self.dataset[key][i] for i in idx], dtype=np.uint8)
+        # batch_x = np.array([self.dataset[key][i]/127.5-1.0 for i in idx], dtype=np.float32)
+        if level is not None:
+            if level != int(level):
+                min_lw, max_lw = int(level+1)-level, level-int(level)
+                lr_key = self._base_key + '{}x{}'.format(size//2, size//2)
+                low_resol_batch_x = np.array([self.dataset[lr_key][i] for i in idx], dtype=np.uint8).repeat(2, axis=2).repeat(2, axis=3)
+                # low_resol_batch_x = np.array([self.dataset[lr_key][i]/127.5-1.0 for i in idx], dtype=np.float32).repeat(2, axis=2).repeat(2, axis=3)
+                batch_x = batch_x * max_lw + low_resol_batch_x * min_lw
+        return batch_x
+
+    def save_imgs(self, samples, file_name): #save combined image
+        N_samples, channel, height, width = samples.shape
+        N_row = N_col = int(np.ceil(N_samples**0.5))
+        combined_imgs = np.ones((channel, N_row*height, N_col*width))
+        for i in range(N_row):
+            for j in range(N_col):
+                if i*N_col+j < samples.shape[0]:
+                    combined_imgs[:,i*height:(i+1)*height, j*width:(j+1)*width] = samples[i*N_col+j]
+        combined_imgs = np.transpose(combined_imgs, [1, 2, 0])
+        scipy.misc.imsave(file_name+'.png', combined_imgs)
+
+class Cityscape_label():
+    def __init__(self):
+        # datapath = 'cityscape_label.h5'
+        datapath = 'tmp.h5'
+        resolution = ['data2x2', 'data4x4', 'data8x8', 'data16x16', 'data32x32', 'data64x64', \
+                        'data128x128', 'data256x256', 'data512x512', 'data1024x1024', 'data2048x2048']
+        self._base_key = 'data'
+        self.dataset = h5py.File(os.path.join(prefix, datapath), 'r')
+        self._len = {k:len(self.dataset[k]) for k in resolution}
+        assert all([resol in self.dataset.keys() for resol in resolution])
+
+    def __call__(self, batch_size, size, level=None):
+        key = self._base_key + '{}x{}'.format(size, size)
+        idx = np.random.randint(self._len[key], size=batch_size)
+        batch_x = np.array([self.dataset[key][i] for i in idx], dtype=np.uint8)
+        # batch_x = np.array([self.dataset[key][i]/127.5-1.0 for i in idx], dtype=np.float32)
+        if level is not None:
+            if level != int(level):
+                min_lw, max_lw = int(level+1)-level, level-int(level)
+                lr_key = self._base_key + '{}x{}'.format(size//2, size//2)
+                low_resol_batch_x = np.array([self.dataset[lr_key][i] for i in idx], dtype=np.uint8).repeat(2, axis=2).repeat(2, axis=3)
+                # low_resol_batch_x = np.array([self.dataset[lr_key][i]/127.5-1.0 for i in idx], dtype=np.float32).repeat(2, axis=2).repeat(2, axis=3)
+                batch_x = batch_x * max_lw + low_resol_batch_x * min_lw
+        return batch_x
+
+    def save_imgs(self, samples, file_name): #save combined image
+        N_samples, channel, height, width = samples.shape
+        N_row = N_col = int(np.ceil(N_samples**0.5))
+        combined_imgs = np.ones((channel, N_row*height, N_col*width))
+        for i in range(N_row):
+            for j in range(N_col):
+                if i*N_col+j < samples.shape[0]:
+                    combined_imgs[:,i*height:(i+1)*height, j*width:(j+1)*width] = samples[i*N_col+j]
+        combined_imgs = np.transpose(combined_imgs, [1, 2, 0])
+        scipy.misc.imsave(file_name+'.png', combined_imgs)
+
 
 class RandomNoiseGenerator():
     def __init__(self, size, noise_type='gaussian'):

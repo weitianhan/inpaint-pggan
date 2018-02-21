@@ -2,12 +2,13 @@
 # -*- coding: utf-8 -*-
 import torch
 import torch.optim as optim
+import torchvision
 from torch.autograd import Variable
 import torch.nn as nn
 import sys, os, time
 sys.path.append('utils')
 sys.path.append('models')
-from utils.data import CelebA, RandomNoiseGenerator
+from utils.data import CelebA, RandomNoiseGenerator, Cityscape_img, Cityscape_label
 from models.model import Generator, Discriminator, Encoder
 import argparse
 import numpy as np
@@ -37,6 +38,7 @@ class PGGAN():
 
         self.bs_map = {2**R: self.get_bs(2**R) for R in range(2, 11)}
         self.rows_map = {32: 8, 16: 4, 8: 4, 4: 2, 2: 2}
+        self.alpha = 0.9
 
         # save opts
         with open(os.path.join(os.path.join(self.opts['exp_dir'], current_time), 'options.txt'), 'w') as f:
@@ -94,7 +96,7 @@ class PGGAN():
         g_l2_loss = self.compute_additional_g_loss(self.hole_real, self.hole_fake)
         self.g_adv_loss = self._get_data(g_adv_loss)
         self.g_l2_loss = self._get_data(g_l2_loss)
-        return 0.01*g_adv_loss + 0.99*g_l2_loss
+        return (1-self.alpha)*g_adv_loss + self.alpha*g_l2_loss
 
     def compute_D_loss(self):
         self.d_adv_loss_real = self.compute_adv_loss(self.d_real, True, 0.5)
@@ -111,7 +113,8 @@ class PGGAN():
         pass
 
     def _numpy2var(self, x):
-        var = Variable(torch.from_numpy(x))
+        var = Variable(torch.from_numpy(x).float())
+        # var = Variable(torchvision.transforms.ToTensor(x))
         if self.use_cuda:
             var = var.cuda()
         return var
@@ -139,7 +142,7 @@ class PGGAN():
         self.real = self._numpy2var(real)
         # self.hole_fake = self._numpy2var(hole_fake)
         self.hole_real = self._numpy2var(hole_real)
-
+        # print (torch.min(self.real.data), torch.max(self.real.data))
 
     def forward_G(self, cur_level):
         self.d_fake = self.D(self.fake, cur_level=cur_level)
@@ -151,7 +154,7 @@ class PGGAN():
         self.d_real = self.D(self.real, cur_level=cur_level)
         self.d_fake = self.D(self.fake.detach() if detach else self.fake, cur_level=cur_level)
 
-        hole_fake = self.fake.data[:,:,self.startx:self.startx+self.hole_h,self.starty:self.starty + self.hole_w]
+        hole_fake = self.fake.data[:,:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w]
         self.hole_fake = Variable(hole_fake.cuda())
         # print('d_real', self.d_real.view(-1))
         # print('d_fake', self.d_fake.view(-1))
@@ -237,11 +240,19 @@ class PGGAN():
                 # get a batch noise and real images
                 # z = self.noise(batch_size)
                 x = self.data(batch_size, cur_resol, cur_level)
+                x = x / 255.0
+                x = x[:,:,0:cur_resol//2,:]
+                # print (np.min(x), np.max(x))
                 hole_image = x.copy()
-                self.hole_h = self.hole_w = cur_resol // 2 - cur_resol // self.opts['first_resol']
-                self.startx = self.starty = int((cur_resol - self.hole_h) / 2)
-                hole_real = hole_image[:,:,self.startx:self.startx+self.hole_h,self.starty:self.starty + self.hole_w].copy()
-                hole_image[:,:,self.startx:self.startx+self.hole_h,self.starty:self.starty + self.hole_w] = 0
+                # self.hole_h = self.hole_w = cur_resol // 2 - cur_resol // self.opts['first_resol']
+                # self.starth = int((cur_resol - self.hole_h) / 2)
+                # self.startw = int((cur_resol - self.hole_h) / 2)
+                # self.hole_h = self.hole_w = cur_resol // 4 #- cur_resol // self.opts['first_resol']
+                self.hole_h = self.hole_w = 3 * (cur_resol // 16) #- cur_resol // self.opts['first_resol']
+                self.starth = int((cur_resol // 2 - self.hole_h) / 2)
+                self.startw = int((cur_resol - self.hole_h) / 2)
+                hole_real = hole_image[:,:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w].copy()
+                hole_image[:,:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w] = 0
 
                 # preprocess
                 self.preprocess(hole_image, x, hole_real)
@@ -250,7 +261,6 @@ class PGGAN():
                 self.optim_D.zero_grad()
                 self.forward_D(cur_level, detach=True)  # TODO: feed gdrop_strength
                 self.backward_D()
-
                 # update G
                 self.optim_G.zero_grad()
                 self.forward_G(cur_level)
@@ -286,7 +296,15 @@ class PGGAN():
             one_row = []
             # fake
             for col in range(n_col):
-                one_row.append(self.fake[i].cpu().data.numpy())
+                fake = self.fake[i].cpu().data.numpy()
+                fake[fake<=0] = 0 #clipping negative
+                hole_img = self.hole_image[i].cpu().data.numpy()
+                hole_img[:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w] = fake[:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w]
+                # print (np.min(hole_img), np.max(hole_img))
+                # print (np.min(fake), np.max(fake))
+                # print (fake[:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w])
+                one_row.append(hole_img)
+                # one_row.append(self.fake[i].cpu().data.numpy())
                 i += 1
             # real
             for col in range(n_col):
@@ -296,10 +314,10 @@ class PGGAN():
         samples = np.concatenate(samples, axis=1).transpose([1, 2, 0])
 
         half = samples.shape[1] // 2
-        samples[:,:half,:] = samples[:,:half,:] - np.min(samples[:,:half,:])
-        samples[:,:half,:] = samples[:,:half,:] / np.max(samples[:,:half,:])
-        samples[:,half:,:] = samples[:,half:,:] - np.min(samples[:,half:,:])
-        samples[:,half:,:] = samples[:,half:,:] / np.max(samples[:,half:,:])
+        # samples[:,:half,:] = samples[:,:half,:] - np.min(samples[:,:half,:])
+        # samples[:,:half,:] = samples[:,:half,:] / np.max(samples[:,:half,:])
+        # samples[:,half:,:] = samples[:,half:,:] - np.min(samples[:,half:,:])
+        # samples[:,half:,:] = samples[:,half:,:] / np.max(samples[:,half:,:])
         return samples
 
     def save(self, file_name):
@@ -314,12 +332,12 @@ if __name__ == '__main__':
     parser.add_argument('--train_kimg', default=600, type=float, help='# * 1000 real samples for each stabilizing training phase.')
     parser.add_argument('--transition_kimg', default=600, type=float, help='# * 1000 real samples for each fading in phase.')
     parser.add_argument('--g_lr_max', default=1e-4, type=float, help='Generator learning rate')
-    parser.add_argument('--d_lr_max', default=1e-5, type=float, help='Discriminator learning rate')
+    parser.add_argument('--d_lr_max', default=1e-4, type=float, help='Discriminator learning rate')
     parser.add_argument('--beta1', default=0, type=float, help='beta1 for adam')
     parser.add_argument('--beta2', default=0.99, type=float, help='beta2 for adam')
     parser.add_argument('--gan', default='lsgan', type=str, help='model: lsgan/wgan_gp/gan, currently only support lsgan or gan with no_noise option.')
-    parser.add_argument('--first_resol', default=8, type=int, help='first resolution')
-    parser.add_argument('--target_resol', default=256, type=int, help='target resolution')
+    parser.add_argument('--first_resol', default=16, type=int, help='first resolution')
+    parser.add_argument('--target_resol', default=512, type=int, help='target resolution')
     parser.add_argument('--drift', default=1e-3, type=float, help='drift, only available for wgan_gp.')
     parser.add_argument('--sample_freq', default=600, type=int, help='sampling frequency.')
     parser.add_argument('--save_freq', default=5000, type=int, help='save model frequency.')
@@ -337,11 +355,12 @@ if __name__ == '__main__':
     E = Encoder(num_channels=3, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, sigmoid_at_end=sigmoid_at_end)
     G = Generator(num_channels=3, latent_size=latent_size, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, tanh_at_end=False)
     D = Discriminator(num_channels=3, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, sigmoid_at_end=sigmoid_at_end)
-    print(E)
-    print(G)
-    print(D)
+    # print(E)
+    # print(G)
+    # print(D)
     # stop
-    data = CelebA()
+    data = Cityscape_img()
+    # data = CelebA()
     noise = RandomNoiseGenerator(latent_size, 'gaussian')
     pggan = PGGAN(G, D, E, data, noise, opts)
     pggan.train()

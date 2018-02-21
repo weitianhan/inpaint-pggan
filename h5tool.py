@@ -18,6 +18,7 @@ import numpy as np
 import scipy.ndimage
 import PIL.Image
 import h5py # conda install h5py
+import cv2
 
 #----------------------------------------------------------------------------
 
@@ -48,12 +49,20 @@ class HDF5Exporter:
         self.h5_file.close()
 
     def add_images(self, img):
-        assert img.ndim == 4 and img.shape[1] == self.channels and img.shape[2] == img.shape[3]
+        # assert img.ndim == 4 and img.shape[1] == self.channels and img.shape[2] == img.shape[3]
         assert img.shape[2] >= self.resolution and img.shape[2] == 2 ** int(np.floor(np.log2(img.shape[2])))
         for lod in xrange(len(self.h5_lods)):
             while img.shape[2] > self.resolution / (2 ** lod):
                 img = img.astype(np.float32)
-                img = (img[:, :, 0::2, 0::2] + img[:, :, 0::2, 1::2] + img[:, :, 1::2, 0::2] + img[:, :, 1::2, 1::2]) * 0.25
+                # img = (img[:, :, 0::2, 0::2] + img[:, :, 0::2, 1::2] + img[:, :, 1::2, 0::2] + img[:, :, 1::2, 1::2]) * 0.25 #interpolation
+                result = np.ndarray((img.shape[0], img.shape[1], img.shape[2] / 2, img.shape[3] / 2), dtype=np.float32)
+                for i in range(img.shape[0]):
+                    image = img[i].transpose(1,2,0).copy()
+                    # image.resize((image.shape[0] / 2, image.shape[1] / 2))
+                    image = cv2.resize(image, dsize=(image.shape[0] / 2, image.shape[1] / 2), interpolation=cv2.INTER_NEAREST)
+                    image = image.transpose(2,0,1)
+                    result[i,:] = image
+                img = result # nearest neighbor
             quant = np.uint8(np.clip(np.round(img), 0, 255))
             ofs = 0
             while ofs < quant.shape[0]:
@@ -284,9 +293,9 @@ def create_custom(h5_filename, image_dir):
     img = np.asarray(PIL.Image.open(image_filenames[0]))
     resolution = img.shape[0]
     channels = img.shape[2] if img.ndim == 3 else 1
-    if img.shape[1] != resolution:
-        print('Error: Input images must have the same width and height')
-        return
+    # if img.shape[1] != resolution:
+    #     print('Error: Input images must have the same width and height')
+    #     return
     if resolution != 2 ** int(np.floor(np.log2(resolution))):
         print('Error: Input image resolution must be a power-of-two')
         return

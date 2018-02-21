@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from models.base_model import *
-
+conv_kernel_size = 3
+padding_size = int(conv_kernel_size / 2)
 
 def G_conv(incoming, in_channels, out_channels, kernel_size, padding, nonlinearity, init, param=None,
         to_sequential=True, use_wscale=True, use_batchnorm=False, use_pixelnorm=True):
@@ -19,12 +20,12 @@ def G_conv(incoming, in_channels, out_channels, kernel_size, padding, nonlineari
     else:
         return layers
 
-def E_conv(incoming, in_channels, out_channels, kernel_size, padding, nonlinearity, init, param=None,
+def E_conv(incoming, in_channels, out_channels, kernel_size, stride, padding, nonlinearity, init, param=None,
         to_sequential=True, use_wscale=True, use_gdrop=True, use_layernorm=False, gdrop_param=dict()):
     layers = incoming
     # if use_gdrop:
     #     layers += [GDropLayer(**gdrop_param)]
-    layers += [nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=1, padding=padding)]
+    layers += [nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride, padding=padding)]
     he_init(layers[-1], init, param)  # init layers
     if use_wscale:
         layers += [WScaleLayer(layers[-1])]
@@ -104,9 +105,11 @@ class Encoder(nn.Module):
         # nins.append(NINLayer([], self.num_channels, self.get_nf(R-1), act, iact, negative_slope, True, self.use_wscale))
         net = []
         ic, oc = self.get_nf(R), self.get_nf(R)
-        net = D_conv(net, ic, oc, 3, 1, act, iact, negative_slope, False,
+        net = D_conv(net, ic, oc, conv_kernel_size, 1, padding_size, act, iact, negative_slope, False,
                     self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
-        net += [nn.MaxPool2d(2)]
+        # net += [nn.MaxPool2d(2)]
+        net = D_conv(net, oc, oc, conv_kernel_size, 2, padding_size, act, iact, negative_slope, False,
+                    self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
         lods.append(nn.Sequential(*net))
         nin = []
         nin = NINLayer(nin, self.num_channels, oc, act, iact, negative_slope, True, self.use_wscale)
@@ -114,9 +117,10 @@ class Encoder(nn.Module):
         for I in range(R-1, 3, -1):
             ic, oc = self.get_nf(I+1), self.get_nf(I)
             net = []
-            net = D_conv(net, ic, oc, 3, 1, act, iact, negative_slope, False,
+            net = D_conv(net, ic, oc, conv_kernel_size, 1, padding_size, act, iact, negative_slope, False,
                         self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
-            net += [nn.MaxPool2d(2)]
+            net = D_conv(net, oc, oc, conv_kernel_size, 2, padding_size, act, iact, negative_slope, False,
+                        self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
             lods.append(nn.Sequential(*net))
             # nin = [nn.AvgPool2d(kernel_size=2, stride=2, ceil_mode=False, count_include_pad=False)]
             nin = []
@@ -124,7 +128,7 @@ class Encoder(nn.Module):
             nins.append(nin)
 
         net = []
-        lods.append(E_conv(net, self.get_nf(4), self.get_nf(4), 3, 1, act, iact, negative_slope, True, self.use_wscale,self.use_gdrop, self.use_layernorm, gdrop_param))
+        lods.append(E_conv(net, self.get_nf(4), self.get_nf(4), conv_kernel_size, 1, padding_size, act, iact, negative_slope, True, self.use_wscale,self.use_gdrop, self.use_layernorm, gdrop_param))
         nin = []
         nin = NINLayer(nin, self.num_channels, self.get_nf(4), act, iact, negative_slope, True, self.use_wscale)
         nins.append(nin)
@@ -207,7 +211,7 @@ class Generator(nn.Module):
             ic, oc = self.get_nf(I+1), self.get_nf(I+2)
             layers = [nn.Upsample(scale_factor=2, mode='nearest')]  # upsample
             # layers = G_conv(layers, ic, oc, 3, 1, act, iact, negative_slope, False, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
-            net = G_conv(layers, ic, oc, 3, 1, act, iact, negative_slope, True, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
+            net = G_conv(layers, ic, oc, conv_kernel_size, padding_size, act, iact, negative_slope, True, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
             lods.append(net)
             nins.append(NINLayer([], oc, self.num_channels, 'linear', iact, negative_slope, True, self.use_wscale))  # to_rgb layer
 
@@ -223,12 +227,12 @@ class Generator(nn.Module):
         return self.output_layer(x, y, cur_level, insert_y_at)
 
 
-def D_conv(incoming, in_channels, out_channels, kernel_size, padding, nonlinearity, init, param=None,
+def D_conv(incoming, in_channels, out_channels, kernel_size, stride, padding, nonlinearity, init, param=None,
         to_sequential=True, use_wscale=True, use_gdrop=True, use_layernorm=False, gdrop_param=dict()):
     layers = incoming
     if use_gdrop:
         layers += [GDropLayer(**gdrop_param)]
-    layers += [nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=1, padding=padding)]
+    layers += [nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride, padding=padding)]
     he_init(layers[-1], init, param)  # init layers
     if use_wscale:
         layers += [WScaleLayer(layers[-1])]
@@ -289,9 +293,10 @@ class Discriminator(nn.Module):
         # nins.append(NINLayer([], self.num_channels, self.get_nf(R-1), act, iact, negative_slope, True, self.use_wscale))
         net = []
         ic, oc = self.get_nf(R), self.get_nf(R)
-        net = D_conv(net, ic, oc, 3, 1, act, iact, negative_slope, False,
+        # net = D_conv(net, ic, oc, 3, 1, 1, act, iact, negative_slope, False,
+        #             self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
+        net = D_conv(net, oc, oc, conv_kernel_size, 2, padding_size, act, iact, negative_slope, False,
                     self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
-        net += [nn.MaxPool2d(2)]
         lods.append(nn.Sequential(*net))
         nin = []
         nin = NINLayer(nin, self.num_channels, oc, act, iact, negative_slope, True, self.use_wscale)
@@ -299,9 +304,10 @@ class Discriminator(nn.Module):
         for I in range(R-1, 3, -1):
             ic, oc = self.get_nf(I+1), self.get_nf(I)
             net = []
-            net = D_conv(net, ic, oc, 3, 1, act, iact, negative_slope, False,
+            # net = D_conv(net, ic, oc, 3, 1, 1, act, iact, negative_slope, False,
+            #             self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
+            net = D_conv(net, ic, oc, conv_kernel_size, 2, padding_size, act, iact, negative_slope, False,
                         self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
-            net += [nn.MaxPool2d(2)]
             lods.append(nn.Sequential(*net))
             # nin = [nn.AvgPool2d(kernel_size=2, stride=2, ceil_mode=False, count_include_pad=False)]
             nin = []
@@ -309,7 +315,7 @@ class Discriminator(nn.Module):
             nins.append(nin)
 
         net = []
-        lods.append(E_conv(net, self.get_nf(4), self.get_nf(4), 1, 0, act, iact, negative_slope, True, self.use_wscale,self.use_gdrop, self.use_layernorm, gdrop_param))
+        lods.append(E_conv(net, self.get_nf(4), self.get_nf(4), 1, 1, 0, act, iact, negative_slope, True, self.use_wscale,self.use_gdrop, self.use_layernorm, gdrop_param))
         nin = []
         nin = NINLayer(nin, self.num_channels, self.get_nf(4), act, iact, negative_slope, True, self.use_wscale)
         nins.append(nin)
