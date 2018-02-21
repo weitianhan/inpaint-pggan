@@ -272,6 +272,7 @@ class Discriminator(nn.Module):
         self.use_gdrop = use_gdrop
         self.use_layernorm = use_layernorm
         self.sigmoid_at_end = sigmoid_at_end
+        self.final = nn.Linear(2048,1)
 
         R = int(np.log2(resolution))
         assert resolution == 2**R and resolution >= 4
@@ -288,9 +289,11 @@ class Discriminator(nn.Module):
 
         nins = nn.ModuleList()
         lods = nn.ModuleList()
+        local_nins = nn.ModuleList()
+        local_lods = nn.ModuleList()
         pre = None
 
-        # nins.append(NINLayer([], self.num_channels, self.get_nf(R-1), act, iact, negative_slope, True, self.use_wscale))
+        # global D
         net = []
         ic, oc = self.get_nf(R), self.get_nf(R)
         # net = D_conv(net, ic, oc, 3, 1, 1, act, iact, negative_slope, False,
@@ -301,7 +304,7 @@ class Discriminator(nn.Module):
         nin = []
         nin = NINLayer(nin, self.num_channels, oc, act, iact, negative_slope, True, self.use_wscale)
         nins.append(nin)
-        for I in range(R-1, 3, -1):
+        for I in range(R, 3, -1):
             ic, oc = self.get_nf(I+1), self.get_nf(I)
             net = []
             # net = D_conv(net, ic, oc, 3, 1, 1, act, iact, negative_slope, False,
@@ -309,9 +312,8 @@ class Discriminator(nn.Module):
             net = D_conv(net, ic, oc, conv_kernel_size, 2, padding_size, act, iact, negative_slope, False,
                         self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
             lods.append(nn.Sequential(*net))
-            # nin = [nn.AvgPool2d(kernel_size=2, stride=2, ceil_mode=False, count_include_pad=False)]
             nin = []
-            nin = NINLayer(nin, self.num_channels, oc//2, act, iact, negative_slope, True, self.use_wscale)
+            nin = NINLayer(nin, self.num_channels, ic, act, iact, negative_slope, True, self.use_wscale)
             nins.append(nin)
 
         net = []
@@ -322,18 +324,59 @@ class Discriminator(nn.Module):
         # print (lods)
         # print (nins)
         # stop
-        self.output_layer = DSelectLayer(pre, lods, nins)
+        self.global_output_layer = globalDSelectLayer(pre, lods, nins)
+
+        # local D
+        net = []
+        ic, oc = self.get_nf(R), self.get_nf(R)
+        # net = D_conv(net, ic, oc, 3, 1, 1, act, iact, negative_slope, False,
+        #             self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
+        net = D_conv(net, oc, oc, conv_kernel_size, 2, padding_size, act, iact, negative_slope, False,
+                    self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
+        local_lods.append(nn.Sequential(*net))
+        nin = []
+        nin = NINLayer(nin, self.num_channels, oc, act, iact, negative_slope, True, self.use_wscale)
+        local_nins.append(nin)
+        for I in range(R-1, 3, -1):
+            ic, oc = self.get_nf(I+1), self.get_nf(I)
+            net = []
+            # net = D_conv(net, ic, oc, 3, 1, 1, act, iact, negative_slope, False,
+            #             self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
+            net = D_conv(net, ic, oc, conv_kernel_size, 2, padding_size, act, iact, negative_slope, False,
+                        self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
+            local_lods.append(nn.Sequential(*net))
+            nin = []
+            nin = NINLayer(nin, self.num_channels, oc//2, act, iact, negative_slope, True, self.use_wscale)
+            local_nins.append(nin)
+
+        net = []
+        local_lods.append(E_conv(net, self.get_nf(4), self.get_nf(4), 1, 1, 0, act, iact, negative_slope, True, self.use_wscale,self.use_gdrop, self.use_layernorm, gdrop_param))
+        nin = []
+        nin = NINLayer(nin, self.num_channels, self.get_nf(4), act, iact, negative_slope, True, self.use_wscale)
+        local_nins.append(nin)
+        # print (local_lods)
+        # print (local_nins)
+        # stop
+        self.local_output_layer = localDSelectLayer(pre, local_lods, local_nins)
 
 
     def get_nf(self, stage):
-        return int(self.fmap_base / (2.0 ** (stage * self.fmap_decay)))
+        result = int(self.fmap_base / (2.0 ** (stage * self.fmap_decay)))
+        if result <= 16:
+            result = 16
+        return result
 
-    def forward(self, x, y=None, cur_level=None, insert_y_at=None, gdrop_strength=0.0):
+    def forward(self, x, y=None, cur_level=None, insert_y_at=None, gdrop_strength=0.0,starth=0, startw=0, hole_h=0, hole_w=0):
         for module in self.modules():
             if hasattr(module, 'strength'):
                 module.strength = gdrop_strength
-        return self.output_layer(x, y, cur_level, insert_y_at)
-
+        hole = x[:,:,starth:starth+hole_h,startw:startw + hole_w]
+        local_feature = self.local_output_layer(hole, y, cur_level, insert_y_at)
+        global_feature = self.global_output_layer(x, y, cur_level, insert_y_at)
+        concat_feature = torch.cat((global_feature,local_feature), 1)
+        x = concat_feature.view(-1, 2048)
+        x = self.final(x)
+        return x
 
 # class AutoencodingDiscriminator(nn.Module):
 #     def __init__(self,

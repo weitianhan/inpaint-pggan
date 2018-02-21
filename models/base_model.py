@@ -271,9 +271,9 @@ class GSelectLayer(nn.Module):
         return x
 
 
-class DSelectLayer(nn.Module):
+class globalDSelectLayer(nn.Module):
     def __init__(self, pre, chain, inputs):
-        super(DSelectLayer, self).__init__()
+        super(globalDSelectLayer, self).__init__()
         assert len(chain) == len(inputs)
         self.pre = pre
         self.chain = chain
@@ -282,7 +282,7 @@ class DSelectLayer(nn.Module):
         self.bs_map = {2**R: self.get_bs(2**R) for R in range(2, 11)}
         self.batch_size = 32
         # self.score = nn.Linear(self.batch_size*512*8*8, self.batch_size)
-        self.score = nn.Linear(512*8*16, 1)
+        self.score = nn.Linear(512*4*8, 1024)
     def get_bs(self, resolution):
         R = int(np.log2(resolution))
         if R < 7:
@@ -300,16 +300,16 @@ class DSelectLayer(nn.Module):
 
         max_level, min_level = int(np.floor(self.N-cur_level)), int(np.ceil(self.N-cur_level))
         min_level_weight, max_level_weight = int(cur_level+1)-cur_level, cur_level-int(cur_level)
-        max_level += 2
-        min_level += 2
+        max_level += 1
+        min_level += 1
         _from, _to, _step = min_level+1, self.N, 1
 
         if self.pre is not None:
             x = self.pre(x)
 
         if DEBUG:
-            print('D: level=%s, size=%s, max_level=%s, min_level=%s' % ('in', x.size(), max_level, min_level))
-            print ('D: From=%s, to=%s, curlevel=%s' % (_from, _to, cur_level))
+            print('global_D: level=%s, size=%s, max_level=%s, min_level=%s' % ('in', x.size(), max_level, min_level))
+            print ('global_D: From=%s, to=%s, curlevel=%s' % (_from, _to, cur_level))
 
         if max_level == min_level:
             x = self.inputs[max_level](x)
@@ -340,12 +340,89 @@ class DSelectLayer(nn.Module):
                 x = self.chain[level](x)
 
             if DEBUG:
-                print('D: level=%d, size=%s' % (level, x.size()))
+                print('global_D: level=%d, size=%s' % (level, x.size()))
         # fully connected
-        x = x.view(-1, 512*8*16)
-        # x = x.view(-1, 512*3*3)
+        # x = x.view(-1, 512*8*16)
+        x = x.view(-1, 512*4*8)
         x = self.score(x)
-        x = F.sigmoid(x)
+        # x = F.sigmoid(x)
+        return x
+
+class localDSelectLayer(nn.Module):
+    def __init__(self, pre, chain, inputs):
+        super(localDSelectLayer, self).__init__()
+        assert len(chain) == len(inputs)
+        self.pre = pre
+        self.chain = chain
+        self.inputs = inputs
+        self.N = len(self.chain)
+        self.bs_map = {2**R: self.get_bs(2**R) for R in range(2, 11)}
+        self.batch_size = 32
+        # self.score = nn.Linear(self.batch_size*512*8*8, self.batch_size)
+        self.score = nn.Linear(512*3*3, 1024)
+    def get_bs(self, resolution):
+        R = int(np.log2(resolution))
+        if R < 7:
+            bs = 32 / 2**(max(0, R-4))
+        else:
+            bs = 8 / 2**(min(2, R-7))
+        return int(bs)
+
+    def forward(self, x, y=None, cur_level=None, insert_y_at=None):
+        self.batch_size = self.bs_map[2 ** (int(cur_level) + 1)]
+        if cur_level is None:
+            cur_level = self.N  # cur_level: physical index
+        if y is not None:
+            assert insert_y_at is not None
+
+        max_level, min_level = int(np.floor(self.N-cur_level)), int(np.ceil(self.N-cur_level))
+        min_level_weight, max_level_weight = int(cur_level+1)-cur_level, cur_level-int(cur_level)
+        max_level += 2
+        min_level += 2
+        _from, _to, _step = min_level+1, self.N, 1
+
+        if self.pre is not None:
+            x = self.pre(x)
+
+        if DEBUG:
+            print('local_D: level=%s, size=%s, max_level=%s, min_level=%s' % ('in', x.size(), max_level, min_level))
+            print ('local_D: From=%s, to=%s, curlevel=%s' % (_from, _to, cur_level))
+
+        if max_level == min_level:
+            x = self.inputs[max_level](x)
+            if max_level == insert_y_at:
+                x = self.chain[max_level](x, y)
+            else:
+                x = self.chain[max_level](x)
+        else:
+            out = {}
+            tmp = self.inputs[max_level](x)
+            if max_level == insert_y_at:
+                tmp = self.chain[max_level](tmp, y)
+            else:
+                tmp = self.chain[max_level](tmp)
+            out['max_level'] = tmp
+            out['min_level'] = self.inputs[min_level](x)
+            x = resize_activations(out['min_level'], out['max_level'].size()) * min_level_weight + \
+                                out['max_level'] * max_level_weight
+            if min_level == insert_y_at:
+                x = self.chain[min_level](x, y)
+            else:
+                x = self.chain[min_level](x)
+
+        for level in range(_from, _to, _step):
+            if level == insert_y_at:
+                x = self.chain[level](x, y)
+            else:
+                x = self.chain[level](x)
+
+            if DEBUG:
+                print('local_D: level=%d, size=%s' % (level, x.size()))
+        # fully connected
+        # x = x.view(-1, 512*8*16)
+        x = x.view(-1, 512*3*3)
+        x = self.score(x)
+        # x = F.sigmoid(x)
         return x
 
 class ESelectLayer(nn.Module):

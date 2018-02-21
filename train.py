@@ -145,14 +145,14 @@ class PGGAN():
         # print (torch.min(self.real.data), torch.max(self.real.data))
 
     def forward_G(self, cur_level):
-        self.d_fake = self.D(self.fake, cur_level=cur_level)
+        self.d_fake = self.D(self.fake, cur_level=cur_level,starth=self.starth, startw=self.startw, hole_h=self.hole_h, hole_w=self.hole_w)
 
     def forward_D(self, cur_level, detach=True):
         self.encoded_feature = self.E(self.hole_image, cur_level = cur_level)
         self.fake = self.G(self.encoded_feature, cur_level=cur_level)
         # self.d_real = self.D(self.add_noise(self.real), cur_level=cur_level)
-        self.d_real = self.D(self.real, cur_level=cur_level)
-        self.d_fake = self.D(self.fake.detach() if detach else self.fake, cur_level=cur_level)
+        self.d_real = self.D(self.real, cur_level=cur_level,starth=self.starth, startw=self.startw, hole_h=self.hole_h, hole_w=self.hole_w)
+        self.d_fake = self.D(self.fake.detach() if detach else self.fake, cur_level=cur_level,starth=self.starth, startw=self.startw, hole_h=self.hole_h, hole_w=self.hole_w)
 
         hole_fake = self.fake.data[:,:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w]
         self.hole_fake = Variable(hole_fake.cuda())
