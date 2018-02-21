@@ -38,7 +38,7 @@ class PGGAN():
 
         self.bs_map = {2**R: self.get_bs(2**R) for R in range(2, 11)}
         self.rows_map = {32: 8, 16: 4, 8: 4, 4: 2, 2: 2}
-        self.alpha = 0.9
+        self.alpha = 0.1
 
         # save opts
         with open(os.path.join(os.path.join(self.opts['exp_dir'], current_time), 'options.txt'), 'w') as f:
@@ -100,7 +100,7 @@ class PGGAN():
 
     def compute_D_loss(self):
         self.d_adv_loss_real = self.compute_adv_loss(self.d_real, True, 0.5)
-        self.d_adv_loss_fake = self.compute_adv_loss(self.d_fake, False, 0.5) * 0.1
+        self.d_adv_loss_fake = self.compute_adv_loss(self.d_fake, False, 0.5)
         d_adv_loss = self.d_adv_loss_real + self.d_adv_loss_fake
         # d_add_loss = self.compute_additional_d_loss()
         self.d_adv_loss = self._get_data(d_adv_loss)
@@ -145,14 +145,14 @@ class PGGAN():
         # print (torch.min(self.real.data), torch.max(self.real.data))
 
     def forward_G(self, cur_level):
-        self.d_fake = self.D(self.fake, cur_level=cur_level)
+        self.d_fake = self.D(self.fake, cur_level=cur_level,starth=self.starth, startw=self.startw, hole_h=self.hole_h, hole_w=self.hole_w)
 
     def forward_D(self, cur_level, detach=True):
         self.encoded_feature = self.E(self.hole_image, cur_level = cur_level)
         self.fake = self.G(self.encoded_feature, cur_level=cur_level)
         # self.d_real = self.D(self.add_noise(self.real), cur_level=cur_level)
-        self.d_real = self.D(self.real, cur_level=cur_level)
-        self.d_fake = self.D(self.fake.detach() if detach else self.fake, cur_level=cur_level)
+        self.d_real = self.D(self.real, cur_level=cur_level,starth=self.starth, startw=self.startw, hole_h=self.hole_h, hole_w=self.hole_w)
+        self.d_fake = self.D(self.fake.detach() if detach else self.fake, cur_level=cur_level,starth=self.starth, startw=self.startw, hole_h=self.hole_h, hole_w=self.hole_w)
 
         hole_fake = self.fake.data[:,:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w]
         self.hole_fake = Variable(hole_fake.cuda())
@@ -283,8 +283,8 @@ class PGGAN():
                     self.tensorboard(it, _num_it, phase, cur_resol, samples)
 
                 # save model
-                if (it % self.opts['save_freq'] == 0 and it > 0) or it == _num_it-1:
-                    self.save(os.path.join(self.opts['ckpt_dir'], '%dx%d-%s-%s' % (cur_resol, cur_resol, phase, str(it).zfill(6))))
+                # if (it % self.opts['save_freq'] == 0 and it > 0) or it == _num_it-1:
+                #     self.save(os.path.join(self.opts['ckpt_dir'], '%dx%d-%s-%s' % (cur_resol, cur_resol, phase, str(it).zfill(6))))
 
     def sample(self):
         batch_size = self.hole_image.size(0)
@@ -331,7 +331,7 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', default='0', type=str, help='gpu(s) to use.')
     parser.add_argument('--train_kimg', default=600, type=float, help='# * 1000 real samples for each stabilizing training phase.')
     parser.add_argument('--transition_kimg', default=600, type=float, help='# * 1000 real samples for each fading in phase.')
-    parser.add_argument('--g_lr_max', default=1e-4, type=float, help='Generator learning rate')
+    parser.add_argument('--g_lr_max', default=1e-3, type=float, help='Generator learning rate')
     parser.add_argument('--d_lr_max', default=1e-4, type=float, help='Discriminator learning rate')
     parser.add_argument('--beta1', default=0, type=float, help='beta1 for adam')
     parser.add_argument('--beta2', default=0.99, type=float, help='beta2 for adam')

@@ -58,7 +58,6 @@ class HDF5Exporter:
                 result = np.ndarray((img.shape[0], img.shape[1], img.shape[2] / 2, img.shape[3] / 2), dtype=np.float32)
                 for i in range(img.shape[0]):
                     image = img[i].transpose(1,2,0).copy()
-                    # image.resize((image.shape[0] / 2, image.shape[1] / 2))
                     image = cv2.resize(image, dsize=(image.shape[0] / 2, image.shape[1] / 2), interpolation=cv2.INTER_NEAREST)
                     image = image.transpose(2,0,1)
                     result[i,:] = image
