@@ -9,6 +9,7 @@ import sys, os, time
 sys.path.append('utils')
 sys.path.append('models')
 from utils.data import CelebA, RandomNoiseGenerator, Cityscape_img, Cityscape_label
+from utils import helper
 from models.model import Generator, Discriminator, Encoder
 import argparse
 import numpy as np
@@ -238,12 +239,15 @@ class PGGAN():
                 phase = 'stabilize' if int(cur_level) == cur_level else 'fade_in'
 
                 # get a batch noise and real images
-                # z = self.noise(batch_size)
                 x = self.data(batch_size, cur_resol, cur_level)
-                x = x / 255.0
                 x = x[:,:,0:cur_resol//2,:]
-                # print (np.min(x), np.max(x))
-                hole_image = x.copy()
+                ins = np.zeros((batch_size, 35, x.shape[2], x.shape[3]))
+                for b in range(batch_size):
+                    for h in range(x.shape[2]):
+                        for w in range(x.shape[3]):
+                            channel = x[b,0,h,w]
+                            ins[b,int(channel),h,w] = 1
+                hole_image = ins.copy()
                 # self.hole_h = self.hole_w = cur_resol // 2 - cur_resol // self.opts['first_resol']
                 # self.starth = int((cur_resol - self.hole_h) / 2)
                 # self.startw = int((cur_resol - self.hole_h) / 2)
@@ -255,7 +259,7 @@ class PGGAN():
                 hole_image[:,:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w] = 0
 
                 # preprocess
-                self.preprocess(hole_image, x, hole_real)
+                self.preprocess(hole_image, ins, hole_real)
 
                 # update D
                 self.optim_D.zero_grad()
@@ -296,19 +300,28 @@ class PGGAN():
             one_row = []
             # fake
             for col in range(n_col):
-                fake = self.fake[i].cpu().data.numpy()
+                fake = self.fake[i].cpu().data
                 fake[fake<=0] = 0 #clipping negative
-                hole_img = self.hole_image[i].cpu().data.numpy()
+                hole_img = self.hole_image[i].cpu().data
                 hole_img[:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w] = fake[:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w]
+                hole_img = np.argmax(hole_img, axis=0)
+                hole_img = hole_img[np.newaxis,:]
+                fake_color = helper.tensor2label(hole_img, 35)
+                fake_color = fake_color.transpose([2,0,1])
                 # print (np.min(hole_img), np.max(hole_img))
                 # print (np.min(fake), np.max(fake))
                 # print (fake[:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w])
-                one_row.append(hole_img)
+                one_row.append(fake_color)
                 # one_row.append(self.fake[i].cpu().data.numpy())
                 i += 1
             # real
             for col in range(n_col):
-                one_row.append(self.hole_image[j].cpu().data.numpy())
+                real = self.hole_image[j].cpu().data
+                real = np.argmax(real, axis=0)
+                real = real[np.newaxis,:]
+                real_color = helper.tensor2label(real, 35)
+                real_color = real_color.transpose([2,0,1])
+                one_row.append(real_color)
                 j += 1
             samples += [np.concatenate(one_row, axis=2)]
         samples = np.concatenate(samples, axis=1).transpose([1, 2, 0])
@@ -352,14 +365,14 @@ if __name__ == '__main__':
     latent_size = 512
     sigmoid_at_end = args.gan in ['lsgan', 'gan']
 
-    E = Encoder(num_channels=3, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, sigmoid_at_end=sigmoid_at_end)
-    G = Generator(num_channels=3, latent_size=latent_size, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, tanh_at_end=False)
-    D = Discriminator(num_channels=3, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, sigmoid_at_end=sigmoid_at_end)
+    E = Encoder(num_channels=35, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, sigmoid_at_end=sigmoid_at_end)
+    G = Generator(num_channels=35, latent_size=latent_size, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, tanh_at_end=False)
+    D = Discriminator(num_channels=35, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, sigmoid_at_end=sigmoid_at_end)
     # print(E)
     # print(G)
     # print(D)
     # stop
-    data = Cityscape_img()
+    data = Cityscape_label()
     # data = CelebA()
     noise = RandomNoiseGenerator(latent_size, 'gaussian')
     pggan = PGGAN(G, D, E, data, noise, opts)

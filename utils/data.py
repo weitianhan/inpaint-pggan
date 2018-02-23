@@ -135,13 +135,13 @@ class Cityscape_label():
         idx = np.random.randint(self._len[key], size=batch_size)
         batch_x = np.array([self.dataset[key][i] for i in idx], dtype=np.uint8)
         # batch_x = np.array([self.dataset[key][i]/127.5-1.0 for i in idx], dtype=np.float32)
-        if level is not None:
-            if level != int(level):
-                min_lw, max_lw = int(level+1)-level, level-int(level)
-                lr_key = self._base_key + '{}x{}'.format(size//2, size//2)
-                low_resol_batch_x = np.array([self.dataset[lr_key][i] for i in idx], dtype=np.uint8).repeat(2, axis=2).repeat(2, axis=3)
-                # low_resol_batch_x = np.array([self.dataset[lr_key][i]/127.5-1.0 for i in idx], dtype=np.float32).repeat(2, axis=2).repeat(2, axis=3)
-                batch_x = batch_x * max_lw + low_resol_batch_x * min_lw
+        # if level is not None:
+        #     if level != int(level):
+        #         min_lw, max_lw = int(level+1)-level, level-int(level)
+        #         lr_key = self._base_key + '{}x{}'.format(size//2, size//2)
+        #         low_resol_batch_x = np.array([self.dataset[lr_key][i] for i in idx], dtype=np.uint8).repeat(2, axis=2).repeat(2, axis=3)
+        #         # low_resol_batch_x = np.array([self.dataset[lr_key][i]/127.5-1.0 for i in idx], dtype=np.float32).repeat(2, axis=2).repeat(2, axis=3)
+        #         batch_x = batch_x * max_lw + low_resol_batch_x * min_lw
         return batch_x
 
     def save_imgs(self, samples, file_name): #save combined image
