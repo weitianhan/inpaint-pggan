@@ -231,7 +231,7 @@ class GSelectLayer(nn.Module):
         self.post = post
         self.N = len(self.chain)
 
-    def forward(self, x, y=None, cur_level=None, insert_y_at=None):
+    def forward(self, x, y=None, feature_list=None, cur_level=None, insert_y_at=None):
         if cur_level is None:
             cur_level = self.N  # cur_level: physical index
         if y is not None:
@@ -246,7 +246,8 @@ class GSelectLayer(nn.Module):
 
         if self.pre is not None:
             x = self.pre(x)
-
+        # x = torch.cat((x,feature_list[-1]),1)
+        # del feature_list[-1]
         out = {}
         if DEBUG:
             print('G: level=%s, size=%s, max_level=%s, min_level=%s' % ('in', x.size(), max_level, min_level))
@@ -257,6 +258,8 @@ class GSelectLayer(nn.Module):
             else:
                 # print (self.chain[level])
                 x = self.chain[level](x)
+                x = torch.cat((x,feature_list[-1]),1)
+                del feature_list[-1]
 
             if DEBUG:
                 print('G: level=%d, size=%s' % (level, x.size()))
@@ -445,6 +448,7 @@ class ESelectLayer(nn.Module):
         max_level += 2
         min_level += 2
         _from, _to, _step = min_level+1, self.N, 1
+        feature_list = [] # store features for skip-connection
 
         if self.pre is not None:
             x = self.pre(x)
@@ -454,17 +458,22 @@ class ESelectLayer(nn.Module):
             print ('E: From=%s, to=%s, curlevel=%s' % (_from, _to, cur_level))
         if max_level == min_level:
             x = self.inputs[max_level](x)
+            feature_list.append(x)
             if max_level == insert_y_at:
                 x = self.chain[max_level](x, y)
             else:
                 x = self.chain[max_level](x)
+                # if (max_level < self.N - 1): # whether or not connect most-middle
+                feature_list.append(x)
         else:
             out = {}
             tmp = self.inputs[max_level](x)
+            feature_list.append(tmp)
             if max_level == insert_y_at:
                 tmp = self.chain[max_level](tmp, y)
             else:
                 tmp = self.chain[max_level](tmp)
+                feature_list.append(tmp)
             out['max_level'] = tmp
             out['min_level'] = self.inputs[min_level](x)
             x = resize_activations(out['min_level'], out['max_level'].size()) * min_level_weight + \
@@ -473,18 +482,20 @@ class ESelectLayer(nn.Module):
                 x = self.chain[min_level](x, y)
             else:
                 x = self.chain[min_level](x)
+                feature_list.append(x)
 
         for level in range(_from, _to, _step):
             if level == insert_y_at:
                 x = self.chain[level](x, y)
             else:
                 x = self.chain[level](x)
+                feature_list.append(x)
 
-        # x = self.pre[0](x) # last 1*1 conv for encoding
+        del feature_list[-1] # delete the last feature
 
-            if DEBUG:
-                print('E: level=%d, size=%s' % (level, x.size()))
-        return x
+        if DEBUG:
+            print('E: level=%d, size=%s' % (level, x.size()))
+        return x, feature_list
 
 class AEDSelectLayer(nn.Module):
     def __init__(self, pre, chain, nins):

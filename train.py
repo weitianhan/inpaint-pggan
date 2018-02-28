@@ -148,8 +148,8 @@ class PGGAN():
         self.d_fake = self.D(self.fake, cur_level=cur_level,starth=self.starth, startw=self.startw, hole_h=self.hole_h, hole_w=self.hole_w)
 
     def forward_D(self, cur_level, detach=True):
-        self.encoded_feature = self.E(self.hole_image, cur_level = cur_level)
-        self.fake = self.G(self.encoded_feature, cur_level=cur_level)
+        self.encoded_feature, self.feature_list = self.E(self.hole_image, cur_level = cur_level)
+        self.fake = self.G(self.encoded_feature, feature_list=self.feature_list, cur_level=cur_level)
         # self.d_real = self.D(self.add_noise(self.real), cur_level=cur_level)
         self.d_real = self.D(self.real, cur_level=cur_level,starth=self.starth, startw=self.startw, hole_h=self.hole_h, hole_w=self.hole_w)
         self.d_fake = self.D(self.fake.detach() if detach else self.fake, cur_level=cur_level,starth=self.starth, startw=self.startw, hole_h=self.hole_h, hole_w=self.hole_w)
@@ -355,8 +355,8 @@ if __name__ == '__main__':
     E = Encoder(num_channels=3, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, sigmoid_at_end=sigmoid_at_end)
     G = Generator(num_channels=3, latent_size=latent_size, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, tanh_at_end=False)
     D = Discriminator(num_channels=3, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, sigmoid_at_end=sigmoid_at_end)
-    # print(E)
-    # print(G)
+    print(E)
+    print(G)
     # print(D)
     # stop
     data = Cityscape_img()

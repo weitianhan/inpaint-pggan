@@ -205,15 +205,15 @@ class Generator(nn.Module):
                     True, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)  # first block
 
         lods.append(net)
-        nins.append(NINLayer([], self.get_nf(4), self.num_channels, 'linear', iact, negative_slope, True, self.use_wscale))  # to_rgb layer
+        nins.append(NINLayer([], self.get_nf(4)*2, self.num_channels, 'linear', iact, negative_slope, True, self.use_wscale))  # to_rgb layer
 
         for I in range(3, R):  # following blocks
             ic, oc = self.get_nf(I+1), self.get_nf(I+2)
             layers = [nn.Upsample(scale_factor=2, mode='nearest')]  # upsample
             # layers = G_conv(layers, ic, oc, 3, 1, act, iact, negative_slope, False, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
-            net = G_conv(layers, ic, oc, conv_kernel_size, padding_size, act, iact, negative_slope, True, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
+            net = G_conv(layers, ic*2, oc, conv_kernel_size, padding_size, act, iact, negative_slope, True, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
             lods.append(net)
-            nins.append(NINLayer([], oc, self.num_channels, 'linear', iact, negative_slope, True, self.use_wscale))  # to_rgb layer
+            nins.append(NINLayer([], oc*2, self.num_channels, 'linear', iact, negative_slope, True, self.use_wscale))  # to_rgb layer
 
         # print (lods)
         # print (nins)
@@ -223,8 +223,8 @@ class Generator(nn.Module):
     def get_nf(self, stage):
         return int(self.fmap_base / (2.0 ** (stage * self.fmap_decay)))
 
-    def forward(self, x, y=None, cur_level=None, insert_y_at=None):
-        return self.output_layer(x, y, cur_level, insert_y_at)
+    def forward(self, x, y=None, feature_list=None, cur_level=None, insert_y_at=None):
+        return self.output_layer(x, y, feature_list, cur_level, insert_y_at)
 
 
 def D_conv(incoming, in_channels, out_channels, kernel_size, stride, padding, nonlinearity, init, param=None,
