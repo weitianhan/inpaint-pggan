@@ -79,9 +79,9 @@ class PGGAN():
         return self.adv_criterion(prediction, target, w)
 
     def compute_additional_g_loss(self, image1, image2):
-        criterionMSE = nn.MSELoss()
-        criterionMSE.cuda()
-        l2_loss = criterionMSE(image1, image2)
+        # criterionMSE = nn.MSELoss()
+        # criterionMSE.cuda()
+        l2_loss = torch.sum((image1 - image2) ** 2) / image1.data.nelement()
         return l2_loss
 
     def compute_additional_d_loss(self):  # drifting loss and gradient penalty, weighting inside this function
@@ -150,12 +150,13 @@ class PGGAN():
     def forward_D(self, cur_level, detach=True):
         self.encoded_feature, self.feature_list = self.E(self.hole_image, cur_level = cur_level)
         self.fake = self.G(self.encoded_feature, feature_list=self.feature_list, cur_level=cur_level)
-        # self.d_real = self.D(self.add_noise(self.real), cur_level=cur_level)
+        self.combine = self.real.clone()
+        self.combine[:,:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w] = self.fake[:,:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w].clone()
         self.d_real = self.D(self.real, cur_level=cur_level,starth=self.starth, startw=self.startw, hole_h=self.hole_h, hole_w=self.hole_w)
-        self.d_fake = self.D(self.fake.detach() if detach else self.fake, cur_level=cur_level,starth=self.starth, startw=self.startw, hole_h=self.hole_h, hole_w=self.hole_w)
+        self.d_fake = self.D(self.combine.detach(), cur_level=cur_level,starth=self.starth, startw=self.startw, hole_h=self.hole_h, hole_w=self.hole_w)
 
-        hole_fake = self.fake.data[:,:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w]
-        self.hole_fake = Variable(hole_fake.cuda())
+        # hole_fake = self.fake.data[:,:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w]
+        self.hole_fake = self.fake[:,:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w]
         # print('d_real', self.d_real.view(-1))
         # print('d_fake', self.d_fake.view(-1))
         # print(self.fake[0].view(-1))
