@@ -54,14 +54,14 @@ class HDF5Exporter:
         for lod in xrange(len(self.h5_lods)):
             while img.shape[2] > self.resolution / (2 ** lod):
                 img = img.astype(np.float32)
-                # img = (img[:, :, 0::2, 0::2] + img[:, :, 0::2, 1::2] + img[:, :, 1::2, 0::2] + img[:, :, 1::2, 1::2]) * 0.25 #interpolation
-                result = np.ndarray((img.shape[0], img.shape[1], img.shape[2] / 2, img.shape[3] / 2), dtype=np.float32)
-                for i in range(img.shape[0]):
-                    image = img[i].transpose(1,2,0).copy()
-                    image = cv2.resize(image, dsize=(image.shape[0] / 2, image.shape[1] / 2), interpolation=cv2.INTER_NEAREST)
-                    image = image.transpose(2,0,1)
-                    result[i,:] = image
-                img = result # nearest neighbor
+                img = (img[:, :, 0::2, 0::2] + img[:, :, 0::2, 1::2] + img[:, :, 1::2, 0::2] + img[:, :, 1::2, 1::2]) * 0.25 #interpolation
+                # result = np.ndarray((img.shape[0], img.shape[1], img.shape[2] / 2, img.shape[3] / 2), dtype=np.float32)
+                # for i in range(img.shape[0]):
+                #     image = img[i].transpose(1,2,0).copy()
+                #     image = cv2.resize(image, dsize=(image.shape[0] / 2, image.shape[1] / 2), interpolation=cv2.INTER_NEAREST)
+                #     image = image.transpose(2,0,1)
+                #     result[i,:] = image
+                # img = result # nearest neighbor
             quant = np.uint8(np.clip(np.round(img), 0, 255))
             ofs = 0
             while ofs < quant.shape[0]:

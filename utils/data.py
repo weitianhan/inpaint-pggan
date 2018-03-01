@@ -86,7 +86,7 @@ class CelebA():
 
 class Cityscape_img():
     def __init__(self):
-        datapath = 'cityscape_image.h5'
+        datapath = 'city20k.h5'
         resolution = ['data2x2', 'data4x4', 'data8x8', 'data16x16', 'data32x32', 'data64x64', \
                         'data128x128', 'data256x256', 'data512x512', 'data1024x1024', 'data2048x2048']
         self._base_key = 'data'

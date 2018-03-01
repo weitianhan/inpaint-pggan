@@ -20,6 +20,23 @@ def G_conv(incoming, in_channels, out_channels, kernel_size, padding, nonlineari
     else:
         return layers
 
+def G_deconv(incoming, in_channels, out_channels, kernel_size, padding, nonlinearity, init, param=None,
+        to_sequential=True, use_wscale=True, use_batchnorm=False, use_pixelnorm=True):
+    layers = incoming
+    layers += [nn.ConvTranspose2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=2, padding=padding)]
+    he_init(layers[-1], init, param)  # init layers
+    if use_wscale:
+        layers += [WScaleLayer(layers[-1])]
+    layers += [nonlinearity]
+    if use_batchnorm:
+        layers += [nn.BatchNorm2d(out_channels)]
+    if use_pixelnorm:
+        layers += [PixelNormLayer()]
+    if to_sequential:
+        return nn.Sequential(*layers)
+    else:
+        return layers
+
 def E_conv(incoming, in_channels, out_channels, kernel_size, stride, padding, nonlinearity, init, param=None,
         to_sequential=True, use_wscale=True, use_gdrop=True, use_layernorm=False, gdrop_param=dict()):
     layers = incoming
@@ -209,9 +226,10 @@ class Generator(nn.Module):
 
         for I in range(3, R):  # following blocks
             ic, oc = self.get_nf(I+1), self.get_nf(I+2)
-            layers = [nn.Upsample(scale_factor=2, mode='nearest')]  # upsample
+            # layers = [nn.Upsample(scale_factor=2, mode='nearest')]  # upsample
             # layers = G_conv(layers, ic, oc, 3, 1, act, iact, negative_slope, False, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
-            net = G_conv(layers, ic*2, oc, conv_kernel_size, padding_size, act, iact, negative_slope, True, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
+            layers = []
+            net = G_deconv(layers, ic*2, oc, 4, 1, act, iact, negative_slope, True, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
             lods.append(net)
             nins.append(NINLayer([], oc*2, self.num_channels, 'linear', iact, negative_slope, True, self.use_wscale))  # to_rgb layer
 

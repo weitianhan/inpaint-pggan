@@ -329,8 +329,8 @@ class PGGAN():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu', default='0', type=str, help='gpu(s) to use.')
-    parser.add_argument('--train_kimg', default=600, type=float, help='# * 1000 real samples for each stabilizing training phase.')
-    parser.add_argument('--transition_kimg', default=600, type=float, help='# * 1000 real samples for each fading in phase.')
+    parser.add_argument('--train_kimg', default=1000, type=float, help='# * 1000 real samples for each stabilizing training phase.')
+    parser.add_argument('--transition_kimg', default=1000, type=float, help='# * 1000 real samples for each fading in phase.')
     parser.add_argument('--g_lr_max', default=1e-3, type=float, help='Generator learning rate')
     parser.add_argument('--d_lr_max', default=1e-4, type=float, help='Discriminator learning rate')
     parser.add_argument('--beta1', default=0, type=float, help='beta1 for adam')
