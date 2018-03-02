@@ -268,6 +268,7 @@ class GSelectLayer(nn.Module):
                         out['max_level'] * max_level_weight
         if DEBUG:
             print('G:', x.size())
+        x = F.sigmoid(x)
         return x
 
 

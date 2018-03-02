@@ -3,6 +3,7 @@
 import torch
 import torch.optim as optim
 import torchvision
+import torchvision.utils
 from torch.autograd import Variable
 import torch.nn as nn
 import sys, os, time
@@ -278,6 +279,23 @@ class PGGAN():
                 # sampling
                 samples = []
                 if (it % self.opts['sample_freq'] == 0) or it == _num_it-1:
+                    output = torch.FloatTensor(35, 1, self.real.size(2), self.real.size(3))
+                    layer_rep = self.real[0].cpu().data
+                    real = layer_rep.clone()
+                    tmp = real.numpy()
+                    tmp = tmp[:,np.newaxis,:,:]
+                    real = torch.from_numpy(tmp)
+
+                    fake = self.fake[0].cpu().data
+                    layer_rep[:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w] = fake[:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w]
+                    tmp = layer_rep.numpy()
+                    tmp = tmp[:,np.newaxis,:,:]
+                    layer_rep = torch.from_numpy(tmp)
+                    torchvision.utils.save_image(layer_rep, os.path.join(self.opts['sample_dir'],
+                                        '%dx%d-%s-%s_layer.png' % (cur_resol, cur_resol, phase, str(it).zfill(6))))
+                    torchvision.utils.save_image(real, os.path.join(self.opts['sample_dir'],
+                                        '%dx%d-%s-%s_real.png' % (cur_resol, cur_resol, phase, str(it).zfill(6))))
+
                     samples = self.sample()
                     imsave(os.path.join(self.opts['sample_dir'],
                                         '%dx%d-%s-%s.png' % (cur_resol, cur_resol, phase, str(it).zfill(6))), samples)
@@ -287,8 +305,8 @@ class PGGAN():
                     self.tensorboard(it, _num_it, phase, cur_resol, samples)
 
                 # save model
-                if (it % self.opts['save_freq'] == 0 and it > 0) or it == _num_it-1:
-                    self.save(os.path.join(self.opts['ckpt_dir'], '%dx%d-%s-%s' % (cur_resol, cur_resol, phase, str(it).zfill(6))))
+                # if (it % self.opts['save_freq'] == 0 and it > 0) or it == _num_it-1:
+                #     self.save(os.path.join(self.opts['ckpt_dir'], '%dx%d-%s-%s' % (cur_resol, cur_resol, phase, str(it).zfill(6))))
 
     def sample(self):
         batch_size = self.hole_image.size(0)
@@ -344,7 +362,7 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', default='0', type=str, help='gpu(s) to use.')
     parser.add_argument('--train_kimg', default=600, type=float, help='# * 1000 real samples for each stabilizing training phase.')
     parser.add_argument('--transition_kimg', default=600, type=float, help='# * 1000 real samples for each fading in phase.')
-    parser.add_argument('--g_lr_max', default=1e-4, type=float, help='Generator learning rate')
+    parser.add_argument('--g_lr_max', default=1e-3, type=float, help='Generator learning rate')
     parser.add_argument('--d_lr_max', default=1e-4, type=float, help='Discriminator learning rate')
     parser.add_argument('--beta1', default=0, type=float, help='beta1 for adam')
     parser.add_argument('--beta2', default=0.99, type=float, help='beta2 for adam')
