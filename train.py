@@ -242,8 +242,7 @@ class PGGAN():
                 # z = self.noise(batch_size)
                 x = self.data(batch_size, cur_resol, cur_level)
                 x = x / 255.0
-                x = x[:,:,0:cur_resol//2,:]
-                # print (np.min(x), np.max(x))
+                x = x[:,:,0:cur_resol//2,cur_resol//4:cur_resol*3//4]
                 hole_image = x.copy()
                 # self.hole_h = self.hole_w = cur_resol // 2 - cur_resol // self.opts['first_resol']
                 # self.starth = int((cur_resol - self.hole_h) / 2)
@@ -251,7 +250,7 @@ class PGGAN():
                 # self.hole_h = self.hole_w = cur_resol // 4 #- cur_resol // self.opts['first_resol']
                 self.hole_h = self.hole_w = 3 * (cur_resol // 16) #- cur_resol // self.opts['first_resol']
                 self.starth = int((cur_resol // 2 - self.hole_h) / 2)
-                self.startw = int((cur_resol - self.hole_h) / 2)
+                self.startw = self.starth
                 hole_real = hole_image[:,:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w].copy()
                 hole_image[:,:,self.starth:self.starth+self.hole_h,self.startw:self.startw + self.hole_w] = 0
 
@@ -356,8 +355,8 @@ if __name__ == '__main__':
     E = Encoder(num_channels=3, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, sigmoid_at_end=sigmoid_at_end)
     G = Generator(num_channels=3, latent_size=latent_size, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, tanh_at_end=False)
     D = Discriminator(num_channels=3, resolution=args.target_resol, fmap_max=latent_size, fmap_base=8192, sigmoid_at_end=sigmoid_at_end)
-    print(E)
-    print(G)
+    # print(E)
+    # print(G)
     # print(D)
     # stop
     data = Cityscape_img()

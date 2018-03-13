@@ -20,10 +20,10 @@ def G_conv(incoming, in_channels, out_channels, kernel_size, padding, nonlineari
     else:
         return layers
 
-def G_deconv(incoming, in_channels, out_channels, kernel_size, padding, nonlinearity, init, param=None,
+def G_deconv(incoming, in_channels, out_channels, kernel_size, stride, padding, nonlinearity, init, param=None,
         to_sequential=True, use_wscale=True, use_batchnorm=False, use_pixelnorm=True):
     layers = incoming
-    layers += [nn.ConvTranspose2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=2, padding=padding)]
+    layers += [nn.ConvTranspose2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride, padding=padding)]
     he_init(layers[-1], init, param)  # init layers
     if use_wscale:
         layers += [WScaleLayer(layers[-1])]
@@ -146,7 +146,11 @@ class Encoder(nn.Module):
             nins.append(nin)
 
         net = []
-        lods.append(E_conv(net, self.get_nf(4), self.get_nf(4), conv_kernel_size, 1, padding_size, act, iact, negative_slope, True, self.use_wscale,self.use_gdrop, self.use_layernorm, gdrop_param))
+        net = E_conv(net, self.get_nf(4), 1024, conv_kernel_size, 1, padding_size, act, iact, negative_slope, False, self.use_wscale,self.use_gdrop, self.use_layernorm, gdrop_param)
+        net = E_conv(net, 1024, 1024, conv_kernel_size, 2, padding_size, act, iact, negative_slope, False, self.use_wscale,self.use_gdrop, self.use_layernorm, gdrop_param)
+        net = E_conv(net, 1024, 4000, 4, 1, 0, act, iact, negative_slope, False, self.use_wscale,self.use_gdrop, self.use_layernorm, gdrop_param)
+
+        lods.append(nn.Sequential(*net))
         nin = []
         nin = D_conv(nin, self.num_channels, self.get_nf(4), conv_kernel_size, 1, padding_size, act, iact, negative_slope, True,
                     self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
@@ -218,10 +222,13 @@ class Generator(nn.Module):
         # layers += [ReshapeLayer([latent_size, 1, 1])]
         # layers = G_conv(layers, self.get_nf(4), self.get_nf(4), 1, 1, act, iact, negative_slope,
         #             False, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
-        net = G_conv(layers, self.get_nf(4), self.get_nf(4), conv_kernel_size, padding_size, act, iact, negative_slope,
-                    True, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)  # first block
+        net = []
+        net = G_deconv(net, 4000, 1024, 4, 1, 0, act, iact, negative_slope,
+                    False, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)  # first block
+        net = G_deconv(net, 1024, 512, 4, 2, 1, act, iact, negative_slope,
+                    False, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)  # first block
 
-        lods.append(net)
+        lods.append(nn.Sequential(*net))
         nins.append(NINLayer([], self.get_nf(4)*2, self.num_channels, 'linear', iact, negative_slope, True, self.use_wscale))  # to_rgb layer
 
         for I in range(3, R):  # following blocks
@@ -229,7 +236,7 @@ class Generator(nn.Module):
             # layers = [nn.Upsample(scale_factor=2, mode='nearest')]  # upsample
             # layers = G_conv(layers, ic, oc, 3, 1, act, iact, negative_slope, False, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
             layers = []
-            net = G_deconv(layers, ic*2, oc, 4, 1, act, iact, negative_slope, True, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
+            net = G_deconv(layers, ic*2, oc, 4, 2, 1, act, iact, negative_slope, True, self.use_wscale, self.use_batchnorm, self.use_pixelnorm)
             lods.append(net)
             nins.append(NINLayer([], oc*2, self.num_channels, 'linear', iact, negative_slope, True, self.use_wscale))  # to_rgb layer
 

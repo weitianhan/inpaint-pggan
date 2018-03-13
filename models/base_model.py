@@ -246,8 +246,7 @@ class GSelectLayer(nn.Module):
 
         if self.pre is not None:
             x = self.pre(x)
-        # x = torch.cat((x,feature_list[-1]),1)
-        # del feature_list[-1]
+
         out = {}
         if DEBUG:
             print('G: level=%s, size=%s, max_level=%s, min_level=%s' % ('in', x.size(), max_level, min_level))
@@ -285,7 +284,7 @@ class globalDSelectLayer(nn.Module):
         self.bs_map = {2**R: self.get_bs(2**R) for R in range(2, 11)}
         self.batch_size = 32
         # self.score = nn.Linear(self.batch_size*512*8*8, self.batch_size)
-        self.score = nn.Linear(512*4*8, 1024)
+        self.score = nn.Linear(512*4*4, 1024)
     def get_bs(self, resolution):
         R = int(np.log2(resolution))
         if R < 7:
@@ -346,7 +345,7 @@ class globalDSelectLayer(nn.Module):
                 print('global_D: level=%d, size=%s' % (level, x.size()))
         # fully connected
         # x = x.view(-1, 512*8*16)
-        x = x.view(-1, 512*4*8)
+        x = x.view(-1, 512*4*4)
         x = self.score(x)
         # x = F.sigmoid(x)
         return x
@@ -490,11 +489,12 @@ class ESelectLayer(nn.Module):
             else:
                 x = self.chain[level](x)
                 feature_list.append(x)
+            if DEBUG:
+                print('E: level=%d, size=%s' % (level, x.size()))
 
         del feature_list[-1] # delete the last feature
 
-        if DEBUG:
-            print('E: level=%d, size=%s' % (level, x.size()))
+
         return x, feature_list
 
 class AEDSelectLayer(nn.Module):
