@@ -122,8 +122,8 @@ class Encoder(nn.Module):
         # nins.append(NINLayer([], self.num_channels, self.get_nf(R-1), act, iact, negative_slope, True, self.use_wscale))
         net = []
         ic, oc = self.get_nf(R), self.get_nf(R)
-        net = D_conv(net, ic, oc, conv_kernel_size, 1, padding_size, act, iact, negative_slope, False,
-                    self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
+        # net = D_conv(net, ic, oc, conv_kernel_size, 1, padding_size, act, iact, negative_slope, False,
+        #             self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
         # net += [nn.MaxPool2d(2)]
         net = D_conv(net, oc, oc, conv_kernel_size, 2, padding_size, act, iact, negative_slope, False,
                     self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
@@ -135,9 +135,9 @@ class Encoder(nn.Module):
         for I in range(R-1, 3, -1):
             ic, oc = self.get_nf(I+1), self.get_nf(I)
             net = []
-            net = D_conv(net, ic, oc, conv_kernel_size, 1, padding_size, act, iact, negative_slope, False,
-                        self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
-            net = D_conv(net, oc, oc, conv_kernel_size, 2, padding_size, act, iact, negative_slope, False,
+            # net = D_conv(net, ic, oc, conv_kernel_size, 1, padding_size, act, iact, negative_slope, False,
+            #             self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
+            net = D_conv(net, ic, oc, conv_kernel_size, 2, padding_size, act, iact, negative_slope, False,
                         self.use_wscale, self.use_gdrop, self.use_layernorm, gdrop_param)
             lods.append(nn.Sequential(*net))
             nin = []

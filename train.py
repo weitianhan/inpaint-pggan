@@ -38,7 +38,7 @@ class PGGAN():
 
         self.bs_map = {2**R: self.get_bs(2**R) for R in range(2, 11)}
         self.rows_map = {32: 8, 16: 4, 8: 4, 4: 2, 2: 2}
-        self.alpha = 0.1
+        self.alpha = 0.9
 
         # save opts
         with open(os.path.join(os.path.join(self.opts['exp_dir'], current_time), 'options.txt'), 'w') as f:
